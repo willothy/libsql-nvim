@@ -1,0 +1,21 @@
+[package]
+name = "libsql-lua"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "libsql"
+path = "src/lib.rs"
+crate-type = ["cdylib"]
+
+[dependencies]
+libsql = "0.2.0"
+mlua = { version = "0.9.6", features = [
+  "module",
+  "macros",
+  "serialize",
+  "async",
+  "send",
+  "luajit",
+] }
+tokio = { version = "1.36.0", features = ["full"] }
