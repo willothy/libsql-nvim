@@ -14,6 +14,7 @@ function Connection:query(query, parameters) end
 function Connection:execute(query, parameters) end
 
 ---@class libsql.Rows
+---@overload fun():libsql.Row?
 local Rows = {}
 
 ---@return libsql.Row?
@@ -48,7 +49,7 @@ function Row:column_name(index) end
 ---@return string
 function Row:column_type(index) end
 
----@class libsql.Lib
+---@class libsql
 local LibSQL = {}
 
 ---@param uri string

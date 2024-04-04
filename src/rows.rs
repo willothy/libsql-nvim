@@ -84,6 +84,8 @@ impl UserData for LuaRows {
         methods.add_method("column_type", Self::column_type.wrap());
 
         methods.add_method("next", Self::next.wrap());
+
+        methods.add_meta_method("__call", Self::next.wrap());
     }
 }
 
