@@ -39,12 +39,14 @@ impl LuaDatabase {
             .conn
             .execute(
                 &sql,
-                params.into_iter().try_fold(Vec::new(), |mut acc, val| {
-                    let val = LuaSerializer::new(val)
+                params.into_iter().try_fold(Vec::new(), |mut acc, v| {
+                    LuaSerializer::new(v)
                         .into_sql()
-                        .map_err(mlua::Error::external)?;
-                    acc.push(val);
-                    return mlua::Result::Ok(acc);
+                        .map_err(mlua::Error::external)
+                        .and_then(|val| {
+                            acc.push(val);
+                            Ok(acc)
+                        })
                 })?,
             )
             .await
@@ -58,42 +60,13 @@ impl LuaDatabase {
         (sql, params): (String, Vec<mlua::Value<'lua>>),
     ) -> mlua::Result<LuaRows> {
         let params = params.into_iter().try_fold(Vec::new(), |mut acc, v| {
-            let val = match v {
-                mlua::Value::Nil => libsql::Value::Null,
-                mlua::Value::Boolean(b) => {
-                    if b {
-                        libsql::Value::Integer(1)
-                    } else {
-                        libsql::Value::Integer(0)
-                    }
-                }
-                mlua::Value::Integer(i) => libsql::Value::Integer(i),
-                mlua::Value::Number(f) => libsql::Value::Real(f),
-                mlua::Value::String(s) => {
-                    let s = s.to_str().map_err(|_| {
-                        mlua::Error::RuntimeError("string is not valid utf-8".to_string())
-                    })?;
-                    libsql::Value::Text(s.to_string())
-                }
-                mlua::Value::Table(_tbl) => {
-                    return Err(mlua::Error::RuntimeError(
-                        "table is not supported as a parameter".to_string(),
-                    ))
-                }
-                mlua::Value::LightUserData(_)
-                | mlua::Value::Function(_)
-                | mlua::Value::Thread(_)
-                | mlua::Value::UserData(_)
-                | mlua::Value::Error(_) => {
-                    return Err(mlua::Error::RuntimeError(
-                        "unsupported value type".to_string(),
-                    ))
-                }
-            };
-
-            acc.push(val);
-
-            Ok(acc)
+            LuaSerializer::new(v)
+                .into_sql()
+                .map_err(mlua::Error::external)
+                .and_then(|val| {
+                    acc.push(val);
+                    Ok(acc)
+                })
         })?;
         let result = self.conn.query(&sql, params).await.into_lua_err()?;
         Ok(LuaRows::new(result))

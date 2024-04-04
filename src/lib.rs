@@ -3,9 +3,6 @@ pub mod rows;
 pub mod ser;
 pub mod wrap;
 
-use db::LuaDatabase;
-use mlua::{Lua, Table};
-
 #[doc(hidden)]
 #[allow(unused)]
 pub(crate) mod prelude {
@@ -28,12 +25,12 @@ pub(crate) mod prelude {
 }
 
 #[mlua::lua_module(name = "libsql_native")]
-pub fn libsql(lua: &Lua) -> mlua::Result<Table> {
+pub fn libsql(lua: &mlua::Lua) -> mlua::Result<mlua::Table> {
     let module = lua.create_table()?;
 
     module.set(
         "connect",
-        lua.create_function(|_, (url, token)| LuaDatabase::connect(url, token))?,
+        lua.create_function(|_, (url, token)| db::LuaDatabase::connect(url, token))?,
     )?;
 
     Ok(module)
