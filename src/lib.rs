@@ -1,11 +1,9 @@
 use std::sync::{Arc, OnceLock, RwLock};
 
-use error::IntoLuaResult;
 use libsql::{Builder, Connection, Database};
-use mlua::{Integer, IntoLua, Lua, Table, UserData};
+use mlua::{ExternalResult, Integer, IntoLua, Lua, Table, UserData};
 use wrap::prelude::*;
 
-pub mod error;
 pub mod wrap;
 
 #[derive(Clone)]
@@ -20,9 +18,9 @@ impl LuaDatabase {
         let db = Builder::new_remote(url, token)
             .build()
             .await
-            .into_lua_result()?;
+            .into_lua_err()?;
 
-        let conn = db.connect().into_lua_result()?;
+        let conn = db.connect().into_lua_err()?;
 
         Ok(LuaDatabase {
             db: Arc::new(RwLock::new(db)),
@@ -31,7 +29,7 @@ impl LuaDatabase {
     }
 
     pub async fn execute(&self, query: String) -> mlua::Result<Integer> {
-        let result = self.conn.execute(&query, ()).await.into_lua_result()?;
+        let result = self.conn.execute(&query, ()).await.into_lua_err()?;
         Ok(result as Integer)
     }
 
@@ -39,7 +37,7 @@ impl LuaDatabase {
         &'a self,
         (query, params): (String, Vec<String>),
     ) -> mlua::Result<LuaRows> {
-        let result = self.conn.query(&query, params).await.into_lua_result()?;
+        let result = self.conn.query(&query, params).await.into_lua_err()?;
         Ok(LuaRows::new(result))
     }
 }
@@ -111,7 +109,7 @@ impl LuaRows {
             .read()
             .map_err(|e| mlua::Error::RuntimeError(e.to_string()))?
             .column_type(index as i32)
-            .into_lua_result()
+            .into_lua_err()
             .map(|t| match t {
                 libsql::ValueType::Integer => "integer",
                 libsql::ValueType::Real => "real",
@@ -130,7 +128,7 @@ impl LuaRows {
         match writer.next().await {
             Ok(Some(row)) => Ok(Some(LuaRow::new(row, self.column_count()?))),
             Ok(None) => Ok(None),
-            Err(e) => Err(e).into_lua_result(),
+            Err(e) => Err(e).into_lua_err(),
         }
     }
 }
@@ -165,7 +163,7 @@ impl LuaRow {
                 "column index out of range".to_string(),
             ));
         }
-        match self.inner.get_value(idx as i32).into_lua_result()? {
+        match self.inner.get_value(idx as i32).into_lua_err()? {
             libsql::Value::Null => Ok(mlua::Value::Nil),
             libsql::Value::Integer(i) => i.into_lua(lua),
             libsql::Value::Real(f) => f.into_lua(lua),
@@ -210,7 +208,7 @@ impl LuaRow {
         }
         self.inner
             .column_type(idx as i32)
-            .into_lua_result()
+            .into_lua_err()
             .map(|v| match v {
                 libsql::ValueType::Null => "null",
                 libsql::ValueType::Integer => "integer",
