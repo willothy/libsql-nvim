@@ -24,7 +24,7 @@ Currently, only remote connection is supported.
 
 - `libsql.connect(url, token): libsql.Connection`
 
-See `lua/libsql/_meta.lua` for API type definitions.
+See [`lua/libsql/_meta.lua`](https://github.com/willothy/libsql-lua/tree/main/lua/libsql/_meta.lua) for API type definitions.
 
 Example:
 
