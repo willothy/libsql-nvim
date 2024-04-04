@@ -115,6 +115,7 @@ impl LuaRows {
             .map(ToOwned::to_owned)
     }
 
+    #[tokio::main]
     pub async fn next(&self, _: ()) -> mlua::Result<Option<LuaRow>> {
         let column_count = self.column_count()?;
         let mut writer = self.0.write().await;
@@ -132,7 +133,7 @@ impl UserData for LuaRows {
         methods.add_method("column_name", Self::column_name.wrap());
         methods.add_method("column_type", Self::column_type.wrap());
 
-        methods.add_async_method("next", Self::next.wrap_async());
+        methods.add_method("next", Self::next.wrap());
     }
 }
 
