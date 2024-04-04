@@ -15,6 +15,7 @@ pub struct LuaDatabase {
 }
 
 impl LuaDatabase {
+    #[tokio::main]
     pub async fn connect(url: String, token: String) -> mlua::Result<LuaDatabase> {
         let db = Builder::new_remote(url, token)
             .build()
@@ -29,15 +30,14 @@ impl LuaDatabase {
         })
     }
 
+    #[tokio::main]
     pub async fn execute(&self, query: String) -> mlua::Result<Integer> {
         let result = self.conn.execute(&query, ()).await.into_lua_err()?;
         Ok(result as Integer)
     }
 
-    pub async fn query<'lua: 'a, 'a>(
-        &'a self,
-        (query, params): (String, Vec<String>),
-    ) -> mlua::Result<LuaRows> {
+    #[tokio::main]
+    pub async fn query(&self, (query, params): (String, Vec<String>)) -> mlua::Result<LuaRows> {
         let result = self.conn.query(&query, params).await.into_lua_err()?;
         Ok(LuaRows::new(result))
     }
@@ -47,8 +47,8 @@ impl UserData for LuaDatabase {
     fn add_fields<'lua, F: mlua::prelude::LuaUserDataFields<'lua, Self>>(_fields: &mut F) {}
 
     fn add_methods<'lua, M: mlua::prelude::LuaUserDataMethods<'lua, Self>>(methods: &mut M) {
-        methods.add_async_method("execute", Self::execute.wrap_async());
-        methods.add_async_method("query", Self::query.wrap_async());
+        methods.add_method("execute", Self::execute.wrap());
+        methods.add_method("query", Self::query.wrap());
     }
 }
 
@@ -228,7 +228,7 @@ pub fn libsql(lua: &Lua) -> mlua::Result<Table> {
 
     module.set(
         "connect",
-        lua.create_async_function(|_, (url, token)| LuaDatabase::connect(url, token))?,
+        lua.create_function(|_, (url, token)| LuaDatabase::connect(url, token))?,
     )?;
 
     Ok(module)
