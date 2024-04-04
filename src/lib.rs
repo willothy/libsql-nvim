@@ -1,7 +1,8 @@
-use std::sync::{Arc, OnceLock, RwLock};
+use std::sync::{Arc, OnceLock};
 
 use libsql::{Builder, Connection, Database};
 use mlua::{ExternalResult, Integer, IntoLua, Lua, Table, UserData};
+use tokio::sync::RwLock;
 use wrap::prelude::*;
 
 pub mod wrap;
@@ -68,11 +69,7 @@ impl LuaRows {
         if let Some(&count) = self.1.get() {
             return Ok(count);
         }
-        let count = self
-            .0
-            .read()
-            .map_err(|e| mlua::Error::RuntimeError(e.to_string()))?
-            .column_count();
+        let count = self.0.blocking_read().column_count();
         Ok(*self.1.get_or_init(|| count))
     }
 
@@ -88,8 +85,7 @@ impl LuaRows {
         }
 
         self.0
-            .read()
-            .map_err(|e| mlua::Error::RuntimeError(e.to_string()))?
+            .blocking_read()
             .column_name(index as i32)
             .ok_or_else(|| mlua::Error::RuntimeError("column name not found".to_string()))
             .map(ToOwned::to_owned)
@@ -106,8 +102,7 @@ impl LuaRows {
             ));
         }
         self.0
-            .read()
-            .map_err(|e| mlua::Error::RuntimeError(e.to_string()))?
+            .blocking_read()
             .column_type(index as i32)
             .into_lua_err()
             .map(|t| match t {
@@ -121,12 +116,10 @@ impl LuaRows {
     }
 
     pub async fn next(&self, _: ()) -> mlua::Result<Option<LuaRow>> {
-        let mut writer = self
-            .0
-            .write()
-            .map_err(|e| mlua::Error::RuntimeError(e.to_string()))?;
+        let column_count = self.column_count()?;
+        let mut writer = self.0.write().await;
         match writer.next().await {
-            Ok(Some(row)) => Ok(Some(LuaRow::new(row, self.column_count()?))),
+            Ok(Some(row)) => Ok(Some(LuaRow::new(row, column_count))),
             Ok(None) => Ok(None),
             Err(e) => Err(e).into_lua_err(),
         }
