@@ -6,7 +6,6 @@ use mlua::{Integer, IntoLua, Lua, Table, UserData};
 use wrap::prelude::*;
 
 pub mod error;
-pub mod object;
 pub mod wrap;
 
 #[derive(Clone)]
