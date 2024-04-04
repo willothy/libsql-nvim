@@ -3,7 +3,7 @@
 local M = require("libsql.native")
 
 ---@class libsql.Rows
----@field next fun(): libsql.Row?
+---@field next fun(self: libsql.Rows): libsql.Row?
 ---@field column_count fun(self: libsql.Rows): integer
 ---@field column_name fun(self: libsql.Rows, index: integer): string
 ---@field column_type fun(self: libsql.Rows, index: integer): string
@@ -15,7 +15,7 @@ local M = require("libsql.native")
 ---@field column_type fun(self: libsql.Row, index: integer): string
 
 ---@class libsql.Connection
----@field query fun(query: string, parameters: string[]): libsql.Rows
----@field execute fun(query: string, parameters: string[]): integer
+---@field query fun(self: libsql.Connection, query: string, parameters: string[]): libsql.Rows
+---@field execute fun(self: libsql.Connection, query: string, parameters: string[]): integer
 
 return M
