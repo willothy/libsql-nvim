@@ -5,23 +5,7 @@
 //! to be used as methods on Lua userdata types. Also allows for methods that don't take a Lua
 //! context to be added without any wrapper functions.
 
-#[doc(hidden)]
-pub mod prelude {
-    pub use super::{
-        AsyncMethodMutNoLua as _, AsyncMethodMutWithLua as _, AsyncMethodNoLua as _,
-        AsyncMethodWithLua as _,
-    };
-
-    pub use super::{
-        MethodMutNoLua as _, MethodMutWithLua as _, MethodNoLua as _, MethodWithLua as _,
-    };
-
-    pub use super::{FieldNoLua as _, FieldWithLua as _};
-
-    pub use super::MethodNoLuaNoArgs as _;
-}
-
-use mlua::{FromLuaMulti, IntoLuaMulti, Lua};
+use crate::prelude::*;
 use std::future::Future;
 
 // TODO: Figure out how to test these traits. They may not all be 100% correct.
