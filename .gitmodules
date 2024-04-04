@@ -1,3 +1,0 @@
-[submodule "libsql"]
-	path = libsql
-	url = git@github.com:tursodatabase/libsql
