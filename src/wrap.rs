@@ -24,6 +24,8 @@ pub mod prelude {
 use mlua::{FromLuaMulti, IntoLuaMulti, Lua};
 use std::future::Future;
 
+// TODO: Figure out how to test these traits. They may not all be 100% correct.
+
 pub trait FieldWithLua<'lua, T, R>
 where
     T: 'static,
