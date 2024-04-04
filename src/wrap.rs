@@ -30,7 +30,7 @@ where
     R: IntoLuaMulti<'lua>,
     Self: Sized + Fn(&T, &Lua) -> mlua::Result<R> + 'static,
 {
-    fn wrap(self) -> impl Fn(&Lua, &T) -> mlua::Result<R> + 'static;
+    fn wrap_field(self) -> impl Fn(&Lua, &T) -> mlua::Result<R> + 'static;
 }
 impl<'lua, F, T, R> FieldWithLua<'lua, T, R> for F
 where
@@ -38,7 +38,7 @@ where
     R: IntoLuaMulti<'lua>,
     Self: Sized + Fn(&T, &Lua) -> mlua::Result<R> + 'static,
 {
-    fn wrap(self) -> impl Fn(&Lua, &T) -> mlua::Result<R> + 'static {
+    fn wrap_field(self) -> impl Fn(&Lua, &T) -> mlua::Result<R> + 'static {
         move |lua, this| self(this, lua)
     }
 }
@@ -166,7 +166,7 @@ where
     T: 'static,
     A: FromLuaMulti<'lua>,
     R: IntoLuaMulti<'lua>,
-    MR: Future<Output = mlua::Result<R>> + 'a,
+    MR: Future<Output = mlua::Result<R>> + 'static,
     Self: Sized + Fn(&'a mut T, A) -> MR + 'static,
 {
     fn wrap_async_mut(self) -> impl Fn(&'lua Lua, &'a mut T, A) -> MR;
@@ -177,7 +177,7 @@ where
     T: 'static,
     A: FromLuaMulti<'lua>,
     R: IntoLuaMulti<'lua>,
-    MR: Future<Output = mlua::Result<R>> + 'a,
+    MR: Future<Output = mlua::Result<R>> + 'static,
     Self: Sized + Fn(&'a mut T, A) -> MR + 'static,
 {
     fn wrap_async_mut(self) -> impl Fn(&'lua Lua, &'a mut T, A) -> MR {
@@ -213,18 +213,18 @@ where
     T: 'static,
     A: FromLuaMulti<'lua>,
     R: IntoLuaMulti<'lua>,
-    Self: Sized + Fn(&T, &Lua, A) -> mlua::Result<R> + 'static,
+    Self: Sized + Fn(&T, &'lua Lua, A) -> mlua::Result<R> + 'static,
 {
-    fn wrap(self) -> impl Fn(&Lua, &T, A) -> mlua::Result<R> + 'static;
+    fn wrap(self) -> impl Fn(&'lua Lua, &T, A) -> mlua::Result<R> + 'static;
 }
 impl<'lua, F, T, A, R> MethodWithLua<'lua, T, A, R> for F
 where
     T: 'static,
     A: FromLuaMulti<'lua>,
     R: IntoLuaMulti<'lua>,
-    Self: Sized + Fn(&T, &Lua, A) -> mlua::Result<R> + 'static,
+    Self: Sized + Fn(&T, &'lua Lua, A) -> mlua::Result<R> + 'static,
 {
-    fn wrap(self) -> impl Fn(&Lua, &T, A) -> mlua::Result<R> + 'static {
+    fn wrap(self) -> impl Fn(&'lua Lua, &T, A) -> mlua::Result<R> + 'static {
         move |lua, this, args| self(this, lua, args)
     }
 }
@@ -237,7 +237,7 @@ where
     R: IntoLuaMulti<'lua>,
     Self: Sized + Fn(&mut T, A) -> mlua::Result<R> + 'static,
 {
-    fn wrap_mut(self) -> impl Fn(&Lua, &mut T, A) -> mlua::Result<R> + 'static;
+    fn wrap_mut(self) -> impl Fn(&'lua Lua, &mut T, A) -> mlua::Result<R> + 'static;
 }
 impl<'lua, F, T, A, R> MethodMutNoLua<'lua, T, A, R> for F
 where
@@ -246,7 +246,7 @@ where
     R: IntoLuaMulti<'lua>,
     Self: Sized + Fn(&mut T, A) -> mlua::Result<R> + 'static,
 {
-    fn wrap_mut(self) -> impl Fn(&Lua, &mut T, A) -> mlua::Result<R> + 'static {
+    fn wrap_mut(self) -> impl Fn(&'lua Lua, &mut T, A) -> mlua::Result<R> + 'static {
         move |_lua, this, args| self(this, args)
     }
 }
