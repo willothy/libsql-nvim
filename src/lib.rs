@@ -222,7 +222,7 @@ impl UserData for LuaRow {
     }
 }
 
-#[mlua::lua_module(name = "libsql")]
+#[mlua::lua_module(name = "libsql_native")]
 pub fn libsql(lua: &Lua) -> mlua::Result<Table> {
     let module = lua.create_table()?;
 
