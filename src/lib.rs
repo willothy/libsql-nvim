@@ -117,10 +117,9 @@ impl LuaRows {
 
     #[tokio::main]
     pub async fn next(&self, _: ()) -> mlua::Result<Option<LuaRow>> {
-        let column_count = self.column_count()?;
         let mut writer = self.0.write().await;
         match writer.next().await {
-            Ok(Some(row)) => Ok(Some(LuaRow::new(row, column_count))),
+            Ok(Some(row)) => Ok(Some(LuaRow::new(row, writer.column_count()))),
             Ok(None) => Ok(None),
             Err(e) => Err(e).into_lua_err(),
         }
