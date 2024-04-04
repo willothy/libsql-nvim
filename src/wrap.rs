@@ -15,10 +15,71 @@ pub mod prelude {
     pub use super::{
         MethodMutNoLua as _, MethodMutWithLua as _, MethodNoLua as _, MethodWithLua as _,
     };
+
+    pub use super::{FieldNoLua as _, FieldWithLua as _};
+
+    pub use super::MethodNoLuaNoArgs as _;
 }
 
 use mlua::{FromLuaMulti, IntoLuaMulti, Lua};
 use std::future::Future;
+
+pub trait FieldWithLua<'lua, T, R>
+where
+    T: 'static,
+    R: IntoLuaMulti<'lua>,
+    Self: Sized + Fn(&T, &Lua) -> mlua::Result<R> + 'static,
+{
+    fn wrap(self) -> impl Fn(&Lua, &T) -> mlua::Result<R> + 'static;
+}
+impl<'lua, F, T, R> FieldWithLua<'lua, T, R> for F
+where
+    T: 'static,
+    R: IntoLuaMulti<'lua>,
+    Self: Sized + Fn(&T, &Lua) -> mlua::Result<R> + 'static,
+{
+    fn wrap(self) -> impl Fn(&Lua, &T) -> mlua::Result<R> + 'static {
+        move |lua, this| self(this, lua)
+    }
+}
+
+pub trait FieldNoLua<'lua, T, R>
+where
+    T: 'static,
+    R: IntoLuaMulti<'lua>,
+    Self: Sized + Fn(&T) -> mlua::Result<R> + 'static,
+{
+    fn wrap_field(self) -> impl Fn(&Lua, &T) -> mlua::Result<R> + 'static;
+}
+impl<'lua, F, T, R> FieldNoLua<'lua, T, R> for F
+where
+    T: 'static,
+    R: IntoLuaMulti<'lua>,
+    Self: Sized + Fn(&T) -> mlua::Result<R> + 'static,
+{
+    fn wrap_field(self) -> impl Fn(&Lua, &T) -> mlua::Result<R> + 'static {
+        move |_lua, this| self(this)
+    }
+}
+
+pub trait MethodNoLuaNoArgs<'lua, T, R>
+where
+    T: 'static,
+    R: IntoLuaMulti<'lua>,
+    Self: Sized + Fn(&T) -> mlua::Result<R> + 'static,
+{
+    fn wrap(self) -> impl Fn(&Lua, &T, ()) -> mlua::Result<R> + 'static;
+}
+impl<'lua, F, T, R> MethodNoLuaNoArgs<'lua, T, R> for F
+where
+    T: 'static,
+    R: IntoLuaMulti<'lua>,
+    Self: Sized + Fn(&T) -> mlua::Result<R> + 'static,
+{
+    fn wrap(self) -> impl Fn(&Lua, &T, ()) -> mlua::Result<R> + 'static {
+        move |_lua, this, _| self(this)
+    }
+}
 
 /// Trait for wrapping async methods that take a Lua context.
 pub trait AsyncMethodWithLua<'lua, 'a, T, A, R, MR>
