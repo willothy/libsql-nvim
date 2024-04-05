@@ -24,11 +24,9 @@ impl LuaConnection {
             let data = Arc::clone(&data);
             move || {
                 let Some(_) = data.blocking_lock().take() else {
-                    return cb.call::<Result<String, mlua::Error>, ()>(Err(
-                        mlua::Error::RuntimeError("data not set".to_string()),
-                    ));
+                    return Err(mlua::Error::RuntimeError("data not set".to_string()));
                 };
-                cb.call(mlua::Result::Ok(()))
+                cb.call(())
             }
         })
         .into_lua_err()?;
@@ -73,11 +71,9 @@ impl LuaConnection {
             let data = Arc::clone(&data);
             move || {
                 let Some(_) = data.blocking_lock().take() else {
-                    return cb.call::<Result<String, mlua::Error>, ()>(Err(
-                        mlua::Error::RuntimeError("data not set".to_string()),
-                    ));
+                    return Err(mlua::Error::RuntimeError("data not set".to_string()));
                 };
-                cb.call(mlua::Result::Ok(()))
+                cb.call(())
             }
         })
         .into_lua_err()?;

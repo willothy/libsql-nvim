@@ -46,10 +46,9 @@ impl LuaDatabase {
             let data = Arc::clone(&data);
             move || {
                 let Some(rv) = data.blocking_lock().take() else {
-                    cb.call::<Result<String, mlua::Error>, ()>(Err(mlua::Error::RuntimeError(
+                    return mlua::Result::Err(mlua::Error::RuntimeError(
                         "data not set".to_string(),
-                    )))?;
-                    return Ok(());
+                    ));
                 };
                 cb.call(rv)
             }
@@ -64,17 +63,11 @@ impl LuaDatabase {
             move || {
                 let rt = tokio::runtime::Runtime::new().into_lua_err()?;
                 rt.block_on(async {
-                    let conn = match db.read().await.connect().into_lua_err() {
-                        Ok(conn) => conn,
-                        Err(e) => {
-                            data.lock().await.replace(Err(e));
-                            return handle.send().into_lua_err();
-                        }
-                    };
+                    let conn = db.read().await.connect().into_lua_err()?;
 
                     data.lock()
                         .await
-                        .replace(Ok(LuaConnection::new(Arc::new(RwLock::new(conn)))));
+                        .replace(LuaConnection::new(Arc::new(RwLock::new(conn))));
                     handle.send().into_lua_err()?;
                     mlua::Result::Ok(())
                 })
@@ -91,10 +84,7 @@ impl LuaDatabase {
             let data = Arc::clone(&data);
             move || {
                 let Some(rv) = data.blocking_lock().take() else {
-                    cb.call::<Result<String, mlua::Error>, ()>(Err(mlua::Error::RuntimeError(
-                        "data not set".to_string(),
-                    )))?;
-                    return Ok(());
+                    return Err(mlua::Error::RuntimeError("data not set".to_string()));
                 };
                 cb.call(rv)
             }
