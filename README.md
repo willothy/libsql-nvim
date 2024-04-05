@@ -8,14 +8,14 @@ Unofficial Neovim Lua bindings for LibSQL / Turso, mainly focused on the remote 
 ## Planned Features
 
 - [x] LibSQL remote connections
+- [x] Local File DBs
+- [x] In-memory DBs
 - [x] Basic query/execute
 - [x] Positional placeholders
-- [ ] Asynchronous execution via libuv/callbacks (in-progress)
-- [ ] Both synchronous and asynchronous APIs
+- [x] Asynchronous execution via libuv/callbacks
+- [x] Both synchronous and asynchronous APIs
 - [ ] Named placeholders
-- [ ] Local DBs
 - [ ] Local replica API
-- [ ] In-memory DBs
 - [ ] DB schema abstraction
 - [ ] Query validation
 - [ ] JSON or other format support via blobs
