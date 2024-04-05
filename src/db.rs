@@ -42,6 +42,10 @@ impl LuaDatabase {
     pub fn connect(&self, cb: OwnedFunction) -> mlua::Result<()> {
         let data = Arc::new(Mutex::new(None));
 
+        if let Some(conn) = self.conn.upgrade() {
+            return cb.call(LuaConnection::new(conn));
+        }
+
         let handle = libuv::AsyncHandle::new({
             let data = Arc::clone(&data);
             move || {
@@ -54,9 +58,6 @@ impl LuaDatabase {
             }
         })
         .into_lua_err()?;
-
-        // TODO: Can I return the saved value from the weak ptr, or do I need to create a new
-        // connection?
 
         std::thread::spawn({
             let db = Arc::clone(&self.db);
