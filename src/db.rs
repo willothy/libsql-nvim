@@ -1,75 +1,143 @@
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 
-use tokio::sync::RwLock;
+use libsql_nvim_derive::FromLuaSerde;
+use mlua::serde::LuaSerdeExt;
+use mlua::{ExternalResult, OwnedFunction};
+use nvim_oxi::libuv;
+use tokio::sync::{Mutex, RwLock};
 
+use crate::conn::LuaConnection;
 use crate::prelude::*;
-
-use crate::rows::LuaRows;
-use crate::ser::LuaSerializer;
 
 #[derive(Clone)]
 pub struct LuaDatabase {
-    #[allow(unused)]
     db: Arc<RwLock<libsql::Database>>,
-    conn: libsql::Connection,
+    #[allow(unused)]
+    conn: Weak<RwLock<libsql::Connection>>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, FromLuaSerde)]
+pub enum LuaDatabaseKind {
+    #[serde(rename = "remote")]
+    Remote { url: String, token: String },
+    #[serde(rename = "local")]
+    Local { path: String },
+    #[serde(rename = "memory")]
+    Memory,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, FromLuaSerde)]
+pub struct LuaDatabaseConfig {
+    pub(crate) kind: LuaDatabaseKind,
 }
 
 impl LuaDatabase {
-    #[tokio::main]
-    pub async fn connect(url: String, token: String) -> mlua::Result<LuaDatabase> {
-        let db = libsql::Builder::new_remote(url, token)
-            .build()
-            .await
-            .into_lua_err()?;
-
-        let conn = db.connect().into_lua_err()?;
-
-        Ok(LuaDatabase {
+    pub fn new(db: libsql::Database) -> Self {
+        LuaDatabase {
             db: Arc::new(RwLock::new(db)),
-            conn,
+            conn: Weak::new(),
+        }
+    }
+
+    pub fn connect(&self, cb: OwnedFunction) -> mlua::Result<()> {
+        let data = Arc::new(Mutex::new(None));
+
+        let handle = libuv::AsyncHandle::new({
+            let data = Arc::clone(&data);
+            move || {
+                let Some(rv) = data.blocking_lock().take() else {
+                    cb.call::<Result<String, mlua::Error>, ()>(Err(mlua::Error::RuntimeError(
+                        "data not set".to_string(),
+                    )))?;
+                    return Ok(());
+                };
+                cb.call(rv)
+            }
         })
-    }
+        .into_lua_err()?;
 
-    #[tokio::main]
-    pub async fn execute<'lua>(
-        &self,
-        (sql, params): (String, Vec<mlua::Value<'lua>>),
-    ) -> mlua::Result<mlua::Integer> {
-        let result = self
-            .conn
-            .execute(
-                &sql,
-                params.into_iter().try_fold(Vec::new(), |mut acc, v| {
-                    LuaSerializer::new(v)
-                        .into_sql()
-                        .map_err(mlua::Error::external)
-                        .and_then(|val| {
-                            acc.push(val);
-                            Ok(acc)
-                        })
-                })?,
-            )
-            .await
-            .into_lua_err()?;
-        Ok(result as mlua::Integer)
-    }
+        // TODO: Can I return the saved value from the weak ptr, or do I need to create a new
+        // connection?
 
-    #[tokio::main]
-    pub async fn query<'lua>(
-        &self,
-        (sql, params): (String, Vec<mlua::Value<'lua>>),
-    ) -> mlua::Result<LuaRows> {
-        let params = params.into_iter().try_fold(Vec::new(), |mut acc, v| {
-            LuaSerializer::new(v)
-                .into_sql()
-                .map_err(mlua::Error::external)
-                .and_then(|val| {
-                    acc.push(val);
-                    Ok(acc)
+        std::thread::spawn({
+            let db = Arc::clone(&self.db);
+            move || {
+                let rt = tokio::runtime::Runtime::new().into_lua_err()?;
+                rt.block_on(async {
+                    let conn = match db.read().await.connect().into_lua_err() {
+                        Ok(conn) => conn,
+                        Err(e) => {
+                            data.lock().await.replace(Err(e));
+                            return handle.send().into_lua_err();
+                        }
+                    };
+
+                    data.lock()
+                        .await
+                        .replace(Ok(LuaConnection::new(Arc::new(RwLock::new(conn)))));
+                    handle.send().into_lua_err()?;
+                    mlua::Result::Ok(())
                 })
-        })?;
-        let result = self.conn.query(&sql, params).await.into_lua_err()?;
-        Ok(LuaRows::new(result))
+            }
+        });
+
+        Ok(())
+    }
+
+    pub fn create((config, cb): (LuaDatabaseConfig, OwnedFunction)) -> mlua::Result<()> {
+        let data = Arc::new(Mutex::new(None));
+
+        let handle = libuv::AsyncHandle::new({
+            let data = Arc::clone(&data);
+            move || {
+                let Some(rv) = data.blocking_lock().take() else {
+                    cb.call::<Result<String, mlua::Error>, ()>(Err(mlua::Error::RuntimeError(
+                        "data not set".to_string(),
+                    )))?;
+                    return Ok(());
+                };
+                cb.call(rv)
+            }
+        })
+        .into_lua_err()?;
+
+        std::thread::spawn({
+            move || {
+                let rt = tokio::runtime::Runtime::new().into_lua_err()?;
+                rt.block_on(async {
+                    let db = match match config.kind {
+                        LuaDatabaseKind::Remote { url, token } => {
+                            libsql::Builder::new_remote(url, token)
+                                .build()
+                                .await
+                                .into_lua_err()
+                        }
+                        LuaDatabaseKind::Local { path } => libsql::Builder::new_local(path)
+                            .build()
+                            .await
+                            .into_lua_err(),
+                        LuaDatabaseKind::Memory => libsql::Builder::new_local(":memory:")
+                            .build()
+                            .await
+                            .into_lua_err(),
+                    } {
+                        Ok(db) => db,
+                        Err(e) => {
+                            data.lock().await.replace(Err(e));
+                            return handle.send().into_lua_err();
+                        }
+                    };
+
+                    let rv = LuaDatabase::new(db);
+
+                    data.lock().await.replace(Ok(rv));
+                    handle.send().into_lua_err()?;
+                    mlua::Result::Ok(())
+                })
+            }
+        });
+
+        Ok(())
     }
 }
 
@@ -77,7 +145,6 @@ impl UserData for LuaDatabase {
     fn add_fields<'lua, F: mlua::prelude::LuaUserDataFields<'lua, Self>>(_fields: &mut F) {}
 
     fn add_methods<'lua, M: mlua::prelude::LuaUserDataMethods<'lua, Self>>(methods: &mut M) {
-        methods.add_method("execute", Self::execute.wrap());
-        methods.add_method("query", Self::query.wrap());
+        methods.add_method("connect", Self::connect.wrap());
     }
 }

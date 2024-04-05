@@ -10,6 +10,25 @@ use std::future::Future;
 
 // TODO: Figure out how to test these traits. They may not all be 100% correct.
 
+pub trait FunctionNoLua<'lua, A, R>
+where
+    A: FromLuaMulti<'lua>,
+    R: IntoLuaMulti<'lua>,
+    Self: Sized + Fn(A) -> mlua::Result<R> + 'static,
+{
+    fn wrap(self) -> impl Fn(&Lua, A) -> mlua::Result<R> + 'static;
+}
+impl<'lua, F, A, R> FunctionNoLua<'lua, A, R> for F
+where
+    A: FromLuaMulti<'lua>,
+    R: IntoLuaMulti<'lua>,
+    Self: Sized + Fn(A) -> mlua::Result<R> + 'static,
+{
+    fn wrap(self) -> impl Fn(&Lua, A) -> mlua::Result<R> + 'static {
+        move |_lua, args| self(args)
+    }
+}
+
 pub trait FieldWithLua<'lua, T, R>
 where
     T: 'static,

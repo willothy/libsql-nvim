@@ -1,30 +1,39 @@
-use std::sync::OnceLock;
+use mlua::{ExternalResult, IntoLua, OwnedFunction};
+use nvim_oxi::libuv;
+use std::sync::{Arc, Mutex, OnceLock};
 use tokio::sync::RwLock;
 
 use crate::prelude::*;
 
-pub struct LuaRows(RwLock<libsql::Rows>, OnceLock<i32>);
+pub struct LuaRows {
+    inner: Arc<RwLock<libsql::Rows>>,
+    n_cols: OnceLock<i32>,
+}
 
 impl From<libsql::Rows> for LuaRows {
     fn from(rows: libsql::Rows) -> LuaRows {
-        LuaRows(RwLock::new(rows), OnceLock::new())
+        LuaRows {
+            inner: Arc::new(RwLock::new(rows)),
+            n_cols: OnceLock::new(),
+        }
     }
 }
 
 impl LuaRows {
     pub fn new(rows: libsql::Rows) -> LuaRows {
-        LuaRows(RwLock::new(rows), OnceLock::new())
+        LuaRows {
+            inner: Arc::new(RwLock::new(rows)),
+            n_cols: OnceLock::new(),
+        }
     }
 
     pub fn column_count(&self) -> mlua::Result<i32> {
-        if let Some(&count) = self.1.get() {
-            return Ok(count);
-        }
-        let count = self.0.blocking_read().column_count();
-        Ok(*self.1.get_or_init(|| count))
+        Ok(*self
+            .n_cols
+            .get_or_init(|| self.inner.blocking_read().column_count()))
     }
 
-    pub fn column_name(&self, index: mlua::Integer) -> mlua::Result<String> {
+    pub fn column_name(&self, (index, cb): (mlua::Integer, OwnedFunction)) -> mlua::Result<()> {
         if index < 0 {
             return Err(mlua::Error::RuntimeError(
                 "index must be greater than 0".to_string(),
@@ -35,14 +44,54 @@ impl LuaRows {
             ));
         }
 
-        self.0
-            .blocking_read()
-            .column_name(index as i32)
-            .ok_or_else(|| mlua::Error::RuntimeError("column name not found".to_string()))
-            .map(ToOwned::to_owned)
+        let data = Arc::new(Mutex::new(None));
+
+        let handle = libuv::AsyncHandle::new({
+            let data = Arc::clone(&data);
+            move || {
+                let Ok(mut data) = data.lock() else {
+                    cb.call::<Result<String, mlua::Error>, ()>(Err(mlua::Error::RuntimeError(
+                        "mutex lock failed".to_string(),
+                    )))?;
+                    return Ok(());
+                };
+                let Some(rv) = data.take() else {
+                    cb.call::<Result<String, mlua::Error>, ()>(Err(mlua::Error::RuntimeError(
+                        "data not set".to_string(),
+                    )))?;
+                    return Ok(());
+                };
+                cb.call(rv)
+            }
+        })
+        .into_lua_err()?;
+
+        std::thread::spawn({
+            let inner = Arc::clone(&self.inner);
+            move || {
+                let rt = tokio::runtime::Runtime::new().into_lua_err()?;
+                rt.block_on(async {
+                    let rv = inner
+                        .read()
+                        .await
+                        .column_name(index as i32)
+                        .ok_or_else(|| {
+                            mlua::Error::RuntimeError("column name not found".to_string())
+                        })
+                        .map(ToOwned::to_owned);
+
+                    data.lock()
+                        .map_err(|_| mlua::Error::RuntimeError("mutex lock failed".to_string()))?
+                        .replace(rv);
+                    handle.send().into_lua_err()?;
+                    mlua::Result::Ok(())
+                })
+            }
+        });
+        Ok(())
     }
 
-    pub fn column_type(&self, index: mlua::Integer) -> mlua::Result<String> {
+    pub fn column_type(&self, (index, cb): (mlua::Integer, OwnedFunction)) -> mlua::Result<()> {
         if index < 0 {
             return Err(mlua::Error::RuntimeError(
                 "index must be greater than 0".to_string(),
@@ -52,28 +101,111 @@ impl LuaRows {
                 "column index out of range".to_string(),
             ));
         }
-        self.0
-            .blocking_read()
-            .column_type(index as i32)
-            .into_lua_err()
-            .map(|t| match t {
-                libsql::ValueType::Integer => "integer",
-                libsql::ValueType::Real => "real",
-                libsql::ValueType::Text => "text",
-                libsql::ValueType::Blob => "blob",
-                libsql::ValueType::Null => "null",
-            })
-            .map(ToOwned::to_owned)
+
+        let data = Arc::new(Mutex::new(None));
+
+        let handle = libuv::AsyncHandle::new({
+            let data = Arc::clone(&data);
+            move || {
+                let Ok(mut data) = data.lock() else {
+                    cb.call::<Result<String, mlua::Error>, ()>(Err(mlua::Error::RuntimeError(
+                        "mutex lock failed".to_string(),
+                    )))?;
+                    return Ok(());
+                };
+                let Some(rv) = data.take() else {
+                    cb.call::<Result<String, mlua::Error>, ()>(Err(mlua::Error::RuntimeError(
+                        "data not set".to_string(),
+                    )))?;
+                    return Ok(());
+                };
+                cb.call(rv)
+            }
+        })
+        .into_lua_err()?;
+
+        std::thread::spawn({
+            let inner = Arc::clone(&self.inner);
+            move || {
+                let rt = tokio::runtime::Runtime::new().into_lua_err()?;
+                rt.block_on(async {
+                    let rv = inner
+                        .read()
+                        .await
+                        .column_type(index as i32)
+                        .into_lua_err()
+                        .map(|t| match t {
+                            libsql::ValueType::Integer => "integer",
+                            libsql::ValueType::Real => "real",
+                            libsql::ValueType::Text => "text",
+                            libsql::ValueType::Blob => "blob",
+                            libsql::ValueType::Null => "null",
+                        })
+                        .map(ToOwned::to_owned);
+
+                    data.lock()
+                        .map_err(|_| mlua::Error::RuntimeError("mutex lock failed".to_string()))?
+                        .replace(rv);
+                    handle.send().into_lua_err()?;
+                    mlua::Result::Ok(())
+                })
+            }
+        });
+        Ok(())
     }
 
-    #[tokio::main]
-    pub async fn next(&self, _: ()) -> mlua::Result<Option<LuaRow>> {
-        let mut writer = self.0.write().await;
-        match writer.next().await {
-            Ok(Some(row)) => Ok(Some(LuaRow::new(row, writer.column_count()))),
-            Ok(None) => Ok(None),
-            Err(e) => Err(e).into_lua_err(),
-        }
+    pub fn next(&self, cb: OwnedFunction) -> mlua::Result<()> {
+        let data = Arc::new(Mutex::new(None));
+
+        let handle = libuv::AsyncHandle::new({
+            let data = Arc::clone(&data);
+            move || {
+                let Ok(mut data) = data.lock() else {
+                    cb.call::<Result<Option<LuaRow>, mlua::Error>, ()>(Err(
+                        mlua::Error::RuntimeError("mutex lock failed".to_string()),
+                    ))?;
+                    return Ok(());
+                };
+                let Some(rv) = data.take() else {
+                    cb.call::<Result<Option<LuaRow>, mlua::Error>, ()>(Err(
+                        mlua::Error::RuntimeError("data not set".to_string()),
+                    ))?;
+                    return Ok(());
+                };
+
+                cb.call(rv)
+            }
+        })
+        .into_lua_err()?;
+
+        std::thread::spawn({
+            let rows = Arc::clone(&self.inner);
+
+            move || {
+                tokio::runtime::Runtime::new()
+                    .into_lua_err()
+                    .and_then(|rt| {
+                        let rv = rt
+                            .block_on(async {
+                                let mut writer = rows.write().await;
+                                let rv = match writer.next().await.into_lua_err()? {
+                                    Some(row) => Some(LuaRow::new(row, writer.column_count())),
+                                    None => None,
+                                };
+                                mlua::Result::Ok(rv)
+                            })
+                            .into_lua_err();
+
+                        data.lock()
+                            .map_err(|_| mlua::Error::RuntimeError("mutex lock failed".to_string()))
+                            .into_lua_err()?
+                            .replace(rv);
+                        handle.send().into_lua_err()?;
+                        Ok(())
+                    })
+            }
+        });
+        Ok(())
     }
 }
 
