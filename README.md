@@ -11,6 +11,7 @@ Unofficial Neovim Lua bindings for LibSQL / Turso, mainly focused on the remote 
 - [x] Basic query/execute
 - [x] Positional placeholders
 - [ ] Asynchronous execution via libuv/callbacks (in-progress)
+- [ ] Both synchronous and asynchronous APIs
 - [ ] Named placeholders
 - [ ] Local DBs
 - [ ] Local replica API
