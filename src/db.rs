@@ -18,9 +18,9 @@ pub struct LuaDatabase {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, FromLuaSerde)]
 pub enum LuaDatabaseKind {
     #[serde(rename = "remote")]
-    Remote { url: String, token: String },
+    Remote,
     #[serde(rename = "local")]
-    Local { path: String },
+    Local,
     #[serde(rename = "memory")]
     Memory,
 }
@@ -28,6 +28,9 @@ pub enum LuaDatabaseKind {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, FromLuaSerde)]
 pub struct LuaDatabaseConfig {
     pub(crate) kind: LuaDatabaseKind,
+    #[serde(alias = "path")]
+    url: Option<String>,
+    token: Option<String>,
 }
 
 impl LuaDatabase {
@@ -50,14 +53,35 @@ impl LuaDatabase {
         (config, cb): (LuaDatabaseConfig, OwnedFunction),
     ) -> mlua::Result<LuaDatabase> {
         let db = match config.kind {
-            LuaDatabaseKind::Remote { url, token } => libsql::Builder::new_remote(url, token)
-                .build()
-                .await
-                .into_lua_err(),
-            LuaDatabaseKind::Local { path } => libsql::Builder::new_local(path)
-                .build()
-                .await
-                .into_lua_err(),
+            LuaDatabaseKind::Remote => {
+                let LuaDatabaseConfig {
+                    url: Some(url),
+                    token: Some(token),
+                    ..
+                } = config
+                else {
+                    return Err(mlua::Error::RuntimeError(
+                        "url and token must be provided".to_string(),
+                    ));
+                };
+
+                libsql::Builder::new_remote(url, token)
+                    .build()
+                    .await
+                    .into_lua_err()
+            }
+            LuaDatabaseKind::Local => {
+                let Some(path) = config.url else {
+                    return Err(mlua::Error::RuntimeError(
+                        "path must be provided".to_string(),
+                    ));
+                };
+
+                libsql::Builder::new_local(path)
+                    .build()
+                    .await
+                    .into_lua_err()
+            }
             LuaDatabaseKind::Memory => libsql::Builder::new_local(":memory:")
                 .build()
                 .await
@@ -65,6 +89,11 @@ impl LuaDatabase {
         }?;
 
         mlua::Result::Ok(LuaDatabase::new(db))
+    }
+
+    pub fn connect_sync(&self) -> mlua::Result<LuaConnection> {
+        let conn = self.db.blocking_read().connect().into_lua_err()?;
+        Ok(LuaConnection::new(Arc::new(RwLock::new(conn))))
     }
 
     pub fn connect(&self, cb: OwnedFunction) -> mlua::Result<()> {
@@ -78,6 +107,49 @@ impl LuaDatabase {
     pub fn create((config, cb): (LuaDatabaseConfig, OwnedFunction)) -> mlua::Result<()> {
         Self::create_impl((config, cb))
     }
+
+    pub fn create_sync(config: LuaDatabaseConfig) -> mlua::Result<LuaDatabase> {
+        let rt = tokio::runtime::Runtime::new()?;
+        rt.block_on(async {
+            let db = match config.kind {
+                LuaDatabaseKind::Remote => {
+                    let LuaDatabaseConfig {
+                        url: Some(url),
+                        token: Some(token),
+                        ..
+                    } = config
+                    else {
+                        return Err(mlua::Error::RuntimeError(
+                            "url and token must be provided".to_string(),
+                        ));
+                    };
+
+                    libsql::Builder::new_remote(url, token)
+                        .build()
+                        .await
+                        .into_lua_err()
+                }
+                LuaDatabaseKind::Local => {
+                    let Some(path) = config.url else {
+                        return Err(mlua::Error::RuntimeError(
+                            "path must be provided".to_string(),
+                        ));
+                    };
+
+                    libsql::Builder::new_local(path)
+                        .build()
+                        .await
+                        .into_lua_err()
+                }
+                LuaDatabaseKind::Memory => libsql::Builder::new_local(":memory:")
+                    .build()
+                    .await
+                    .into_lua_err(),
+            }?;
+
+            mlua::Result::Ok(LuaDatabase::new(db))
+        })
+    }
 }
 
 impl UserData for LuaDatabase {
@@ -85,5 +157,6 @@ impl UserData for LuaDatabase {
 
     fn add_methods<'lua, M: mlua::prelude::LuaUserDataMethods<'lua, Self>>(methods: &mut M) {
         methods.add_method("connect", Self::connect.wrap());
+        methods.add_method("connect_sync", Self::connect.wrap());
     }
 }

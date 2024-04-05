@@ -28,8 +28,6 @@ pub(crate) mod prelude {
 
     pub use mlua::{FromLuaMulti, IntoLuaMulti, Lua, UserData};
 }
-use prelude::*;
-use serde::Serialize as _;
 
 #[mlua::lua_module(name = "libsql_native")]
 pub fn libsql(lua: &mlua::Lua) -> mlua::Result<mlua::Table> {
@@ -51,20 +49,14 @@ pub fn libsql(lua: &mlua::Lua) -> mlua::Result<mlua::Table> {
         nvim_oxi::libuv::init(state as *mut nvim_oxi::lua::ffi::lua_State);
     }
 
-    fn test<'lua: 'a, 'a>(lua: &'lua Lua, _: ()) -> mlua::Result<mlua::Value<'lua>> {
-        let ser = mlua::serde::Serializer::new(lua);
-
-        Ok(db::LuaDatabaseKind::Remote {
-            url: "akehfukaef".to_owned(),
-            token: "akehflahsefeuafh token".to_owned(),
-        }
-        .serialize(ser)?)
-    }
-    module.set("test", lua.create_function(|lua, _: ()| test(lua, ()))?)?;
-
     module.set(
         "new_db",
         lua.create_function(|_lua, args| db::LuaDatabase::create(args))?,
+    )?;
+
+    module.set(
+        "new_db_sync",
+        lua.create_function(|_lua, args| db::LuaDatabase::create_sync(args))?,
     )?;
 
     Ok(module)

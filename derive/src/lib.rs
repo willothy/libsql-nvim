@@ -92,7 +92,7 @@ pub fn luv_async(_attr: TokenStream, item: TokenStream) -> TokenStream {
                 move || {
                     let rt = ::tokio::runtime::Runtime::new().into_lua_err()?;
                     rt.block_on(async {
-                        let res: #output = #block;
+                        let res: #output = async { #block }.await;
 
                         data.lock()
                             .await
